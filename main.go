@@ -4,6 +4,8 @@ import (
 	"flag"
 	"log"
 	"net/http"
+
+	"github.com/gorilla/websocket"
 )
 
 type responseWriter struct {
@@ -22,10 +24,52 @@ func (rw *responseWriter) WriteHeader(status int) {
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if websocket.IsWebSocketUpgrade(r) {
+			next.ServeHTTP(w, r)
+			log.Printf("WebSocket | Method: %s | Path: %s", r.Method, r.URL.Path)
+			return
+		}
 		rw := newResponseWriter(w)
 		next.ServeHTTP(rw, r)
 		log.Printf("Status: %d | Method: %s | Path: %s", rw.status, r.Method, r.URL.Path)
 	})
+}
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
+func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+
+	if !websocket.IsWebSocketUpgrade(r) {
+		http.Error(w, "Expected WebSocket protocol", http.StatusBadRequest)
+		return
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Error upgrading connection: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	log.Printf("New WebSocket connection from: %s", conn.RemoteAddr().String())
+
+	for {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			log.Println(err)
+			break
+		}
+		log.Printf("Message: %s", string(msg))
+
+		if err = conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			log.Println(err)
+			break
+		}
+	}
 }
 
 func main() {
@@ -35,9 +79,10 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello, World!"))
+	mux.HandleFunc("/ws", handleWebSocket)
 
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "websocket.html")
 	})
 
 	handler := loggingMiddleware(mux)
