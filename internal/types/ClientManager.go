@@ -3,42 +3,42 @@ package types
 import "encoding/json"
 
 type ClientManager struct {
-	clients    map[*Client]bool
-	register   chan *Client
-	unregister chan *Client
-	broadcast  chan []byte
+	Clients    map[*Client]bool
+	Register   chan *Client
+	Unregister chan *Client
+	Broadcast  chan []byte
 }
 
 func NewClientManager() ClientManager {
 	return ClientManager{
-		clients:    make(map[*Client]bool),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		broadcast:  make(chan []byte),
+		Clients:    make(map[*Client]bool),
+		Register:   make(chan *Client),
+		Unregister: make(chan *Client),
+		Broadcast:  make(chan []byte),
 	}
 }
 
 func (manager *ClientManager) Start() {
 	for {
 		select {
-		case conn := <-manager.register:
-			manager.clients[conn] = true
-			jsonMessage, _ := json.Marshal(NewMessage("", "", "/A new socket has connected."))
+		case conn := <-manager.Register:
+			manager.Clients[conn] = true
+			jsonMessage, _ := json.Marshal(NewMessage("", "", "A new socket has connected."))
 			manager.send(jsonMessage, conn)
-		case conn := <-manager.unregister:
-			if _, ok := manager.clients[conn]; ok {
+		case conn := <-manager.Unregister:
+			if _, ok := manager.Clients[conn]; ok {
 				close(conn.send)
-				delete(manager.clients, conn)
-				jsonMessage, _ := json.Marshal(NewMessage("", "", "/A socket has disconnected."))
+				delete(manager.Clients, conn)
+				jsonMessage, _ := json.Marshal(NewMessage("", "", "A socket has disconnected."))
 				manager.send(jsonMessage, conn)
 			}
-		case message := <-manager.broadcast:
-			for conn := range manager.clients {
+		case message := <-manager.Broadcast:
+			for conn := range manager.Clients {
 				select {
 				case conn.send <- message:
 				default:
 					close(conn.send)
-					delete(manager.clients, conn)
+					delete(manager.Clients, conn)
 				}
 			}
 		}
@@ -46,7 +46,7 @@ func (manager *ClientManager) Start() {
 }
 
 func (manager *ClientManager) send(message []byte, ignore *Client) {
-	for conn := range manager.clients {
+	for conn := range manager.Clients {
 		if conn != ignore {
 			conn.send <- message
 		}
