@@ -18,39 +18,49 @@
         ws = new WebSocket("ws://localhost:8080/ws");
 
         ws.onopen = function () {
-          appendMessage("Connected to server");
+          appendMessage("[SYSTEM]: Connected to server");
         };
 
         ws.onmessage = function (e) {
-          appendMessage("Received: " + e.data);
+          const message = JSON.parse(e.data);
+          console.log(message);
+          if (message.sender) {
+            appendMessage(`${message.sender}: ${message.content}`);
+            return;
+          }
+          appendMessage(`[SYSTEM]: ${message.content}`);
         };
 
         ws.onclose = function () {
-          appendMessage("Disconnected");
+          appendMessage("[SYSTEM]: A socket has disconnected");
           // Try to reconnect in 5 seconds
           setTimeout(connect, 5000);
         };
 
         ws.onerror = function (err) {
-          appendMessage("Error: " + err);
+          appendMessage(`[SYSTEM]: Error: ${err}`);
         };
       }
 
       function sendMessage() {
-        if (!ws) {
-          appendMessage("No WebSocket connection");
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          appendMessage("[SYSTEM]: No WebSocket connection");
           return;
         }
 
-        const message = messageInput.value;
-        ws.send(message);
-        appendMessage("Sent: " + message);
-        messageInput.value = "";
+        const message = messageInput.value.trim();
+        if (message) {
+          ws.send(message);
+          messageInput.value = "";
+        }
       }
 
       function appendMessage(message) {
         const div = document.createElement("div");
         div.textContent = message;
+        if (message.includes("SYSTEM")) {
+          div.style.fontWeight = "bold";
+        }
         messagesDiv.appendChild(div);
       }
 
