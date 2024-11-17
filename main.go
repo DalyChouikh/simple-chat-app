@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/DalyChouikh/simple-chat-app/internal/types"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -41,34 +43,26 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+func handleWebSockets(manager *types.ClientManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 
-	if !websocket.IsWebSocketUpgrade(r) {
-		http.Error(w, "Expected WebSocket protocol", http.StatusBadRequest)
-		return
-	}
+		if !websocket.IsWebSocketUpgrade(r) {
+			http.Error(w, "Expected WebSocket protocol", http.StatusBadRequest)
+			return
+		}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("Error upgrading connection: %v", err)
-		return
-	}
-	defer conn.Close()
-
-	log.Printf("New WebSocket connection from: %s", conn.RemoteAddr().String())
-
-	for {
-		_, msg, err := conn.ReadMessage()
+		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Println(err)
-			break
+			http.NotFound(w, r)
+			log.Printf("Error upgrading connection: %v", err)
+			return
 		}
-		log.Printf("Message: %s", string(msg))
-
-		if err = conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-			log.Println(err)
-			break
-		}
+		id, _ := uuid.NewRandom()
+		client := types.NewClient(id.String(), conn)
+		manager.Register <- client
+		log.Printf("Client connected: %v", client.ID)
+		go client.Read(manager)
+		go client.Write()
 	}
 }
 
@@ -77,9 +71,13 @@ func main() {
 	addr := flag.String("addr", ":8080", "http service address")
 	flag.Parse()
 
+	manager := types.NewClientManager()
+
+	go manager.Start()
+
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/ws", handleWebSocket)
+	mux.HandleFunc("/ws", handleWebSockets(&manager))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "websocket.html")
@@ -92,5 +90,4 @@ func main() {
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		log.Fatal("ListenAndServe:", err)
 	}
-
 }
